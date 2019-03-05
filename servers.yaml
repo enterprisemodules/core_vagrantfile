@@ -13,7 +13,14 @@ pe-master-example:
   puppet_installer: puppet-enterprise-2018.1.3-el-7-x86_64/puppet-enterprise-installer
   software:
     - 10.0.0-IIB-LINUXX64-FP0010.tar.gz
-    - file_zip
+    - file.zip
+  additional_hosts: |
+    192.168.1.1 example.com
+    192.168.253.10 wlsmaster.example.com puppet master # wlamaster is what the module looks for
+  virtualboxorafix: true
+  required_plugins:
+    - vagrant-triggers
+    - vagrant-vbguest
 
 pe-agent-example:
   public_ip:        '192.168.253.112'

@@ -2,7 +2,7 @@ require 'yaml'
 
 VAGRANTFILE_API_VERSION = '2'.freeze
 
-# Raises missing plugins
+# Raises missing plugin error
 def plugin_error(plugin_name)
   unless Vagrant.has_plugin?(plugin_name)
     raise "#{plugin_name} is not installed, please run: vagrant plugin " \
@@ -18,7 +18,7 @@ vagrant_root       = File.dirname(__FILE__)
 home               = ENV['HOME']
 add_timestamp      = false
 
-def masterless_setup(config, srv)
+def masterless_setup(config, server, srv)
   config.trigger.after :up do |trigger|
     #
     # Fix hostnames because Vagrant mixes it up.
@@ -28,6 +28,7 @@ def masterless_setup(config, srv)
         cat > /etc/hosts<< "EOF"
         127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4
         #{server['public_ip']} #{hostname}.example.com #{hostname}
+        #{server['additional_hosts'] ? server['additional_hosts'] : ''}
         EOF
         bash /vagrant/vm-scripts/install_puppet.sh
         bash /vagrant/vm-scripts/setup_puppet.sh
@@ -55,7 +56,7 @@ def masterless_setup(config, srv)
   end
 end
 
-def puppet_master_setup(config, srv, puppet_installer)
+def puppet_master_setup(config, srv, server, puppet_installer)
   srv.vm.synced_folder '.', '/vagrant', owner: pe_puppet_user_id, group: pe_puppet_group_id
   srv.vm.provision :shell, inline: "/vagrant/modules/software/files/#{puppet_installer} -c /vagrant/pe.conf -y"
   #
@@ -84,7 +85,7 @@ def puppet_master_setup(config, srv, puppet_installer)
   srv.vm.provision :shell, inline: 'puppet agent -t || true'
 end
 
-def puppet_agent_setup(config, srv)
+def puppet_agent_setup(config, server, srv)
   #
   # First we need to instal the agent.
   #
@@ -97,6 +98,7 @@ def puppet_agent_setup(config, srv)
         cat > /etc/hosts<< "EOF"
         127.0.0.1 localhost.localdomain localhost4 localhost4.localdomain4
         #{server['public_ip']} #{hostname}.example.com #{hostname}
+        #{server['additional_hosts'] ? server['additional_hosts'] : ''}
         EOF
         curl -k https://master.example.com:8140/packages/current/install.bash | sudo bash
         #
@@ -155,22 +157,28 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
       case server['type']
       when 'masterless'
-        masterless_setup(config, srv)
+        masterless_setup(config, server, srv)
       when 'pe-master'
-        puppet_master_setup(config, srv, puppet_installer)
+        puppet_master_setup(config, srv, server, puppet_installer)
       when 'pe-agent'
-        puppet_agent_setup(config, srv)
+        puppet_agent_setup(config, server, srv)
       end
 
-      config.trigger.before :up do
-      end
+      config.vm.provider :virtualbox do |vb|
+        # vb.gui = true
+        vb.cpus = server['cpucount'] || 1
+        vb.memory = server['ram'] || 4096
 
-      config.trigger.after :up do
+        if server['virtualboxorafix'] == 'enable'
+          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/Leaf', '0x4']
+          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/SubLeaf', '0x4']
+          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/eax', '0']
+          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/ebx', '0']
+          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/ecx', '0']
+          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/edx', '0']
+          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/SubLeafMask', '0xffffffff']
+        end
       end
-
-      config.trigger.after :destroy do
-      end
-
     end
   end
 end
