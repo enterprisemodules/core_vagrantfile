@@ -18,47 +18,107 @@ vagrant_root       = File.dirname(__FILE__)
 home               = ENV['HOME']
 add_timestamp      = false
 
-#
-# This routine will read a ~/.software.yaml fileand make links to all the software defined.
-#
-def link_software(server)
-  return nil unless server
-
-  # Read YAML file with box details
-  software_file = server['software'] ? server['software'] : []
-  return nil if software_file == []
-
-  if File.exist?(software_file)
-    software_definition = YAML.load_file(software_file)
-    software_locations = software_definition.fetch('software_locations') do
-      raise "#{software_file} should contain key 'software_locations'"
+def masterless_setup(config, srv)
+  config.trigger.after :up do |trigger|
+    #
+    # Fix hostnames because Vagrant mixes it up.
+    #
+    if srv.vm.communicator == 'ssh'
+      trigger.run_remote = {inline: <<~EOD}
+        cat > /etc/hosts<< "EOF"
+        127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4
+        #{server['public_ip']} #{hostname}.example.com #{hostname}
+        EOF
+        bash /vagrant/vm-scripts/install_puppet.sh
+        bash /vagrant/vm-scripts/setup_puppet.sh
+        /opt/puppetlabs/puppet/bin/puppet apply /etc/puppetlabs/code/environments/production/manifests/site.pp || true
+      EOD
+    else # Windows
+      trigger.run_remote = {inline: <<~EOD}
+        cd c:\\vagrant\\vm-scripts
+        .\\install_puppet.ps1
+        cd c:\\vagrant\\vm-scripts
+        .\\setup_puppet.ps1
+        iex "& 'C:\\Program Files\\Puppet Labs\\Puppet\\bin\\puppet' resource service puppet ensure=stopped"
+        iex "& 'C:\\Program Files\\Puppet Labs\\Puppet\\bin\\puppet' resource service puppet ensure=stopped"
+        iex "& 'C:\\Program Files\\Puppet Labs\\Puppet\\bin\\puppet' apply c:\\vagrant\\manifests\\site.pp -t"
+      EOD
     end
-    raise "software_locations key in #{software_file} should contain array" unless software_locations.is_a?(Array)
-  else
-    software_locations = []
   end
-  software_locations.unshift('./software') # Do local stuff first
-  unless File.exist?('./modules/software/files')
-    FileUtils.mkdir_p('./modules/software/files')
+
+  config.trigger.after :provision do |trigger|
+    if srv.vm.communicator == 'ssh'
+      trigger.run_remote = {
+        inline: "puppet apply /etc/puppetlabs/code/environments/production/manifests/site.pp || true"
+      }
+    end
   end
-  software_locations.each { |dir| link_sync(dir, './modules/software/files') }
 end
 
-#
-# Link filename to target destination
-#
-def link_sync(dir, target)
-  Dir.glob("#{dir}/*").each do |file|
-    file_name = File.basename(file)
-    if File.directory?(file)
-      FileUtils.mkdir("#{target}/#{file_name}") unless File.exist?("#{target}/#{file_name}")
-      link_sync(file, "#{target}/#{file_name}")
-      next
+def puppet_master_setup(config, srv, puppet_installer)
+  srv.vm.synced_folder '.', '/vagrant', owner: pe_puppet_user_id, group: pe_puppet_group_id
+  srv.vm.provision :shell, inline: "/vagrant/modules/software/files/#{puppet_installer} -c /vagrant/pe.conf -y"
+  #
+  # For this vagrant setup, we make sure all nodes in the domain examples.com are autosigned. In production
+  # you'dd want to explicitly confirm every node.
+  #
+  srv.vm.provision :shell, inline: "echo '*.example.com' > /etc/puppetlabs/puppet/autosign.conf"
+  srv.vm.provision :shell, inline: "echo '*.local' >> /etc/puppetlabs/puppet/autosign.conf"
+  srv.vm.provision :shell, inline: "echo '*.home' >> /etc/puppetlabs/puppet/autosign.conf"
+  #
+  # For now we stop the firewall. In the future we will add a nice puppet setup to the ports needed
+  # for Puppet Enterprise to work correctly.
+  #
+  srv.vm.provision :shell, inline: 'systemctl stop firewalld.service'
+  srv.vm.provision :shell, inline: 'systemctl disable firewalld.service'
+  #
+  # This script make's sure the vagrant paths's are symlinked to the places Puppet Enterprise looks for specific
+  # modules, manifests and hiera data. This makes it easy to change these files on your host operating system.
+  #
+  srv.vm.provision :shell, path: 'vm-scripts/setup_puppet.sh'
+  #
+  # Make sure all plugins are synced to the puppetserver before exiting and stating
+  # any agents
+  #
+  srv.vm.provision :shell, inline: 'service pe-puppetserver restart'
+  srv.vm.provision :shell, inline: 'puppet agent -t || true'
+end
+
+def puppet_agent_setup(config, srv)
+  #
+  # First we need to instal the agent.
+  #
+  config.trigger.after :up do |trigger|
+    #
+    # Fix hostnames because Vagrant mixes it up.
+    #
+    if srv.vm.communicator == 'ssh'
+      trigger.run_remote = {inline: <<~EOD}
+        cat > /etc/hosts<< "EOF"
+        127.0.0.1 localhost.localdomain localhost4 localhost4.localdomain4
+        #{server['public_ip']} #{hostname}.example.com #{hostname}
+        EOF
+        curl -k https://master.example.com:8140/packages/current/install.bash | sudo bash
+        #
+        # The agent installation also automatically start's it. In production, this is what you want. For now we
+        # want the first run to be interactive, so we see the output. Therefore, we stop the agent and wait
+        # for it to be stopped before we start the interactive run
+        #
+        pkill -9 -f "puppet.*agent.*"
+        /opt/puppetlabs/puppet/bin/puppet agent -t; exit 0
+        #
+        # After the interactive run is done, we restart the agent in a normal way.
+        #
+        systemctl start puppet
+        EOD
+      else
+        trigger.run_remote = {inline: <<~EOD}
+        Copy-Item -Path c:\\vagrant\\vm-scripts\\windows-hosts -Destination c:\\Windows\\System32\\Drivers\\etc\\hosts
+        [Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}; $webClient = New-Object System.Net.WebClient; $webClient.DownloadFile('https://wlsmaster.example.com:8140/packages/current/install.ps1', 'install.ps1');.\\install.ps1
+        iex 'puppet resource service puppet ensure=stopped'
+        iex 'puppet agent -t'
+        EOD
     end
-    full_target = "#{target}/#{file_name}"
-    next if File.exist?(full_target)
-    puts "Linking file #{file} to #{full_target}..."
-    FileUtils.ln(file, full_target)
   end
 end
 
@@ -75,12 +135,32 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     puppet_installer = server['puppet_installer']
     # config
     config.vm.define name do |srv|
-      srv.vm.box = server['box']
-      hostname = name.split('-').last # First part contains type of node
-      srv.vm.hostname = "#{hostname}.example.com"
-      srv.vm.network 'private_network', ip: server['public_ip']
-      srv.vm.network 'private_network', ip: server['private_ip'], virtualbox__intnet: true
+      srv.vm.communicator = server['protocol'] || 'ssh'
+      srv.vm.box          = server['box']
+      hostname            = name.split('-').last # First part contains type of node
+
+      if srv.vm.communicator == 'ssh'
+        srv.vm.hostname = "#{hostname}.example.com"
+      else
+        srv.vm.hostname = "#{hostname}"
+        config.winrm.ssl_peer_verification = false
+        config.winrm.retry_delay = 60
+        config.winrm.retry_limit = 10
+      end
+
+      srv.vm.network 'private_network', ip: server['public_ip'] if server['public_ip']
+      srv.vm.network 'private_network', ip: server['private_ip'], virtualbox__intnet: true if server['private_ip']
+
       srv.vm.synced_folder '.', '/vagrant', type: :virtualbox
+
+      case server['type']
+      when 'masterless'
+        masterless_setup(config, srv)
+      when 'pe-master'
+        puppet_master_setup(config, srv, puppet_installer)
+      when 'pe-agent'
+        puppet_agent_setup(config, srv)
+      end
 
       config.trigger.before :up do
       end

@@ -1,0 +1,28 @@
+---
+#
+# Here are example server file.
+#
+pe-master-example:
+  public_ip:       '192.168.253.10'
+  cpucount:         2
+  ram:              3072
+  type:             pe-master
+  box:              enterprisemodules/ol-7.3-x86_64-nocm
+  # The installer needs to be unpacked in the ./modules/software/files/
+  # directory.
+  puppet_installer: puppet-enterprise-2018.1.3-el-7-x86_64/puppet-enterprise-installer
+  software:
+    - 10.0.0-IIB-LINUXX64-FP0010.tar.gz
+    - file_zip
+
+pe-agent-example:
+  public_ip:        '192.168.253.112'
+  cpucount:         1
+  type:             pe-agent
+  virtualboxorafix: enable
+
+ml-masterless-example:
+  public_ip:        '192.168.253.112'
+  cpucount:         1
+  type:             masterless
+  virtualboxorafix: enable
