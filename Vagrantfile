@@ -2,14 +2,6 @@ require 'yaml'
 
 VAGRANTFILE_API_VERSION = '2'.freeze
 
-# Raises missing plugin error
-def plugin_error(plugin_name)
-  unless Vagrant.has_plugin?(plugin_name)
-    raise "#{plugin_name} is not installed, please run: vagrant plugin " \
-          "install #{plugin_name}"
-  end
-end
-
 # Read YAML file with box details
 servers            = YAML.load_file('servers.yaml')
 pe_puppet_user_id  = 495
@@ -124,6 +116,31 @@ def puppet_agent_setup(config, server, srv)
   end
 end
 
+# Raises missing plugin error
+def plugin_check(plugin_name)
+  unless Vagrant.has_plugin?(plugin_name)
+    raise "#{plugin_name} is not installed, please run: vagrant plugin " \
+          "install #{plugin_name}"
+  end
+end
+
+def file_check(config, file_name)
+  file_path = "/vagrant/modules/software/files/#{file_name}"
+
+  config.trigger.after :up do |trigger|
+    trigger.run_remote = {inline: <<~EOD}
+      file="#{file_path}"
+      if [ -f "$file" ]
+      then
+        echo "Software file: $file exist."
+      else
+        echo "Missing required software file:\n$file\nPlease add it to the: ./modules/software/files/"
+        exit 1
+      fi
+    EOD
+  end
+end
+
 #
 # Vagrant setup
 #
@@ -131,8 +148,6 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.ssh.insert_key = false
 
   servers.each do |name, server|
-    # Link software to server
-    link_software(server)
     # Fetch puppet installer version
     puppet_installer = server['puppet_installer']
     # config
@@ -155,6 +170,15 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
       srv.vm.synced_folder '.', '/vagrant', type: :virtualbox
 
+      #
+      # Perform checks before main setup
+      #
+      server['required_plugins'].each { |name| plugin_check(name) } if server['required_plugins']
+      server['software_files'].each { |name| file_check(config, name) } if server['software_files']
+
+      #
+      # Depending on the machine type, perform setup
+      #
       case server['type']
       when 'masterless'
         masterless_setup(config, server, srv)
