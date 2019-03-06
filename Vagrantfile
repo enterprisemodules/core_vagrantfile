@@ -124,9 +124,9 @@ def plugin_check(plugin_name)
   end
 end
 
-def file_check(config, file_name)
+# Check if all required software files from servers.yaml are present.
+def software_file_check(config, file_name)
   file_path = "/vagrant/modules/software/files/#{file_name}"
-
   config.trigger.after :up do |trigger|
     trigger.run_remote = {inline: <<~EOD}
       file="#{file_path}"
@@ -150,7 +150,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   servers.each do |name, server|
     # Fetch puppet installer version
     puppet_installer = server['puppet_installer']
-    # config
+
+    # Start VM configuration
     config.vm.define name do |srv|
       srv.vm.communicator = server['protocol'] || 'ssh'
       srv.vm.box          = server['box']
@@ -168,13 +169,17 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       srv.vm.network 'private_network', ip: server['public_ip'] if server['public_ip']
       srv.vm.network 'private_network', ip: server['private_ip'], virtualbox__intnet: true if server['private_ip']
 
+      #
+      # Copy all everything to the box including software
+      #
       srv.vm.synced_folder '.', '/vagrant', type: :virtualbox
 
       #
       # Perform checks before main setup
       #
+      software_file_check(config, puppet_installer) # Check if installer is on VM
       server['required_plugins'].each { |name| plugin_check(name) } if server['required_plugins']
-      server['software_files'].each { |name| file_check(config, name) } if server['software_files']
+      server['software_files'].each { |name| software_file_check(config, name) } if server['software_files']
 
       #
       # Depending on the machine type, perform setup
