@@ -116,6 +116,62 @@ def puppet_agent_setup(config, server, srv)
   end
 end
 
+# Configure VirtualBox disks attached to the virtual machine
+def configure_disks(vb, server, hostname)
+  disks = server['disks'] || {}
+  unless File.file?(".#{hostname}.txt")
+    vb.customize [
+      'storagectl', :id,
+      '--name', 'SATA Controller',
+      '--add', 'sata',
+      '--portcount', disks.size
+    ]
+  end
+
+  disks.each_with_index do |disk, i|
+    disk_name = disk.first
+    disk_size = disk.last['size']
+    disk_uuid = disk.last['uuid']
+
+    if File.file?("#{disk_name}.vdi") && File.file?(".#{disk_name}.txt")
+      file = File.open(".#{disk_name}.txt", 'r')
+      current_uuid = file.read
+      file.close
+    elsif File.file?("#{disk_name}.vdi")
+      current_uuid = '0'
+    else
+      vb.customize [
+        'createhd',
+        '--filename', "#{disk_name}.vdi",
+        '--size', disk_size.to_s,
+        '--variant', 'Standard'
+      ]
+      current_uuid = '0'
+    end
+
+    if current_uuid.include? disk_uuid
+      vb.customize [
+        'storageattach', :id,
+        '--storagectl', 'SATA Controller',
+        '--port', (i + 1).to_s,
+        '--device', 0,
+        '--type', 'hdd',
+        '--medium', "#{disk_name}.vdi"
+      ]
+    else
+      vb.customize [
+        'storageattach', :id,
+        '--storagectl', 'SATA Controller',
+        '--port', (i + 1).to_s,
+        '--device', 0,
+        '--type', 'hdd',
+        '--medium', "#{disk_name}.vdi",
+        '--setuuid', "00000000-0000-0000-0000-00000000000#{disk_uuid}"
+      ]
+    end
+  end
+end
+
 # Raises missing plugin error
 def plugin_check(plugin_name)
   unless Vagrant.has_plugin?(plugin_name)
@@ -198,7 +254,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         vb.cpus = server['cpucount'] || 1
         vb.memory = server['ram'] || 4096
 
-        if server['virtualboxorafix'] == 'enable'
+        if server['virtualboxorafix']
           vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/Leaf', '0x4']
           vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/SubLeaf', '0x4']
           vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/eax', '0']
@@ -207,6 +263,9 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
           vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/edx', '0']
           vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/SubLeafMask', '0xffffffff']
         end
+
+        # Attach disks if the
+        configure_disks(vb, server, hostname) if server['needs_storage']
       end
     end
   end

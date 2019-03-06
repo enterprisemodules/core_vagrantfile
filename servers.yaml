@@ -21,6 +21,7 @@ pe-master-example:
     192.168.1.1 example.com
     192.168.253.10 wlsmaster.example.com puppet master # wlamaster is what the module looks for
   virtualboxorafix: true
+  needs_storage: true
 
 pe-agent-example:
   public_ip:        '192.168.253.112'
