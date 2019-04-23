@@ -10,7 +10,7 @@ vagrant_root       = File.dirname(__FILE__)
 home               = ENV['HOME']
 add_timestamp      = false
 
-def masterless_setup(config, server, srv)
+def masterless_setup(config, server, srv, hostname)
   config.trigger.after :up do |trigger|
     #
     # Fix hostnames because Vagrant mixes it up.
@@ -48,7 +48,7 @@ def masterless_setup(config, server, srv)
   end
 end
 
-def puppet_master_setup(config, srv, server, puppet_installer)
+def puppet_master_setup(config, srv, server, puppet_installer, pe_puppet_user_id, pe_puppet_group_id, hostname)
   srv.vm.synced_folder '.', '/vagrant', owner: pe_puppet_user_id, group: pe_puppet_group_id
   srv.vm.provision :shell, inline: "/vagrant/modules/software/files/#{puppet_installer} -c /vagrant/pe.conf -y"
   #
@@ -77,7 +77,7 @@ def puppet_master_setup(config, srv, server, puppet_installer)
   srv.vm.provision :shell, inline: 'puppet agent -t || true'
 end
 
-def puppet_agent_setup(config, server, srv)
+def puppet_agent_setup(config, server, srv, hostname)
   #
   # First we need to instal the agent.
   #
@@ -242,11 +242,11 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       #
       case server['type']
       when 'masterless'
-        masterless_setup(config, server, srv)
+        masterless_setup(config, server, srv, hostname)
       when 'pe-master'
-        puppet_master_setup(config, srv, server, puppet_installer)
+        puppet_master_setup(config, srv, server, puppet_installer, pe_puppet_user_id, pe_puppet_group_id, hostname)
       when 'pe-agent'
-        puppet_agent_setup(config, server, srv)
+        puppet_agent_setup(config, server, srv, hostname)
       end
 
       config.vm.provider :virtualbox do |vb|
