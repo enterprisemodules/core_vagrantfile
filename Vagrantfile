@@ -116,6 +116,17 @@ def puppet_agent_setup(config, server, srv, hostname)
   end
 end
 
+# Fix setup for Oracle applications
+def virtualboxorafix(vb)
+  vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/Leaf', '0x4']
+  vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/SubLeaf', '0x4']
+  vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/eax', '0']
+  vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/ebx', '0']
+  vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/ecx', '0']
+  vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/edx', '0']
+  vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/SubLeafMask', '0xffffffff']
+end
+
 # Configure VirtualBox disks attached to the virtual machine
 def configure_disks(vb, server, hostname)
   disks = server['disks'] || {}
@@ -139,6 +150,26 @@ def configure_disks(vb, server, hostname)
       file.close
     elsif File.file?("#{disk_name}.vdi")
       current_uuid = '0'
+    elsif server['cluster'] &&
+          File.file?("#{disk_name}_#{server['cluster']}.vdi") &&
+          File.file?(".#{disk_name}_#{server['cluster']}.txt")
+      file = File.open(".#{disk_name}_#{server['cluster']}.txt", 'r')
+      current_uuid = file.read
+      file.close
+    elsif server['cluster'] && File.file?("#{disk_name}_#{server['cluster']}.vdi")
+      current_uuid = '0'
+    elsif server['cluster']
+      vb.customize [
+        'createhd',
+        '--filename', "#{disk_name}_#{server['cluster']}.vdi",
+        '--size', disk_size.to_s,
+        '--variant', 'Fixed'
+      ]
+      vb.customize [
+        'modifyhd', "#{disk_name}_#{server['cluster']}.vdi",
+        '--type', 'shareable'
+      ]
+      current_uuid = '0'
     else
       vb.customize [
         'createhd',
@@ -149,7 +180,29 @@ def configure_disks(vb, server, hostname)
       current_uuid = '0'
     end
 
-    if current_uuid.include? disk_uuid
+    # Conditional for adding disk_uuid
+    if server['cluster'] && current_uuid.include?(disk_uuid)
+      vb.customize [
+        'storageattach', :id,
+        '--storagectl', 'SATA Controller',
+        '--port', (i + 1).to_s,
+        '--device', 0,
+        '--type', 'hdd',
+        '--medium', "#{disk_name}_#{server['cluster']}.vdi",
+        '--mtype', 'shareable'
+      ]
+    elsif server['cluster']
+      vb.customize [
+        'storageattach', :id,
+        '--storagectl', 'SATA Controller',
+        '--port', (i + 1).to_s,
+        '--device', 0,
+        '--type', 'hdd',
+        '--medium', "#{disk_name}_#{server['cluster']}.vdi",
+        '--mtype', 'shareable',
+        '--setuuid', "00000000-0000-0000-0000-0000000000#{disk_uuid}"
+      ]
+    elsif current_uuid.include? disk_uuid
       vb.customize [
         'storageattach', :id,
         '--storagectl', 'SATA Controller',
@@ -254,17 +307,10 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         vb.cpus = server['cpucount'] || 1
         vb.memory = server['ram'] || 4096
 
-        if server['virtualboxorafix']
-          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/Leaf', '0x4']
-          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/SubLeaf', '0x4']
-          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/eax', '0']
-          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/ebx', '0']
-          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/ecx', '0']
-          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/edx', '0']
-          vb.customize ['setextradata', :id, 'VBoxInternal/CPUM/HostCPUID/Cache/SubLeafMask', '0xffffffff']
-        end
+        # Setup config fixes for Oracle product
+        virtualboxorafix(vb) if server['virtualboxorafix']
 
-        # Attach disks if the
+        # Attach disks if the setup needs virtual drives
         configure_disks(vb, server, hostname) if server['needs_storage']
       end
     end
