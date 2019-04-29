@@ -233,20 +233,14 @@ def plugin_check(plugin_name)
   end
 end
 
-# Check if all required software files from servers.yaml are present.
-def software_file_check(config, file_name)
-  file_path = "/vagrant/modules/software/files/#{file_name}"
+# Check if all required software files from servers.yaml are present in repo.
+def local_software_file_check(config, file_name)
   config.trigger.after :up do |trigger|
-    trigger.run_remote = {inline: <<~EOD}
-      file="#{file_path}"
-      if [ -f "$file" ]
-      then
-        echo "Software file: $file exist."
-      else
-        echo "Missing required software file:\n$file\nPlease add it to the: ./modules/software/files/"
-        exit 1
-      fi
-    EOD
+    puts(file_name, 'Test')
+    file_path = Dir.pwd + "/modules/software/files/#{file_name}"
+    unless File.exist?(file_path) # returns true for driectories
+      raise "Missing software file: #{file_name}\nPlease add file to the: ./modules/software/files/"
+    end
   end
 end
 
@@ -257,11 +251,28 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.ssh.insert_key = false
 
   servers.each do |name, server|
-    # Fetch puppet installer version
-    puppet_installer = server['puppet_installer']
-
     # Start VM configuration
     config.vm.define name do |srv|
+      # Perform checks
+      config.trigger.after :up do |trigger|
+        #
+        # Perform plugin checks before main setup
+        #
+        server['required_plugins'].each { |name| plugin_check(name) } if server['required_plugins']
+        #
+        # Perform software checks before main setup
+        #
+        server['software_files'].each { |name| local_software_file_check(config, name) } if server['software_files']
+
+        # Fetch puppet installer version
+        puppet_installer = server['puppet_installer']
+
+        #
+        # Perform puppet installer check before main setup
+        #
+        local_software_file_check(config, puppet_installer) # Check if installer folder is present
+      end
+
       srv.vm.communicator = server['protocol'] || 'ssh'
       srv.vm.box          = server['box']
       hostname            = name.split('-').last # First part contains type of node
@@ -282,13 +293,6 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       # Copy all everything to the box including software
       #
       srv.vm.synced_folder '.', '/vagrant', type: :virtualbox
-
-      #
-      # Perform checks before main setup
-      #
-      software_file_check(config, puppet_installer) # Check if installer is on VM
-      server['required_plugins'].each { |name| plugin_check(name) } if server['required_plugins']
-      server['software_files'].each { |name| software_file_check(config, name) } if server['software_files']
 
       #
       # Depending on the machine type, perform setup
