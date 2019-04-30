@@ -71,3 +71,9 @@ raw-example:
   box:              enterprisemodules/ol-7.3-x86_64-nocm
   software_files:
     - puppet-agent-file.rpm
+
+ml-mqwindows:
+  public_ip: '192.168.253.30'
+  cpucount: 2
+  type:     masterless_windows
+  box:      peru/windows-server-2016-standard-x64-eval
