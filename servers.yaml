@@ -1,6 +1,6 @@
 ---
 #
-# Here are example server file.
+# Here is example server file.
 #
 pe-master-example:
   public_ip:       '192.168.253.10'
@@ -13,8 +13,7 @@ pe-agent-example:
   public_ip:        '192.168.253.112'
   cpucount:         1
   type:             pe-agent
-  virtualboxorafix: enable
-  virtualboxorafix: enable
+  virtualboxorafix: true
   box:              enterprisemodules/ol-7.3-x86_64-nocm
   # The installer needs to be unpacked in the ./modules/software/files/
   # directory.
@@ -27,15 +26,14 @@ pe-agent-example:
     - vagrant-vbguest
   additional_hosts: |
     192.168.1.1 example.com
-    192.168.253.10 wlsmaster.example.com puppet master # wlamaster is what the module looks for
-  virtualboxorafix: true
+    192.168.253.10 wlsmaster.example.com puppet master
   needs_storage: true
 
 ml-masterless-example:
   public_ip:        '192.168.253.112'
   cpucount:         1
   type:             masterless
-  virtualboxorafix: enable
+  virtualboxorafix: true
   box:              enterprisemodules/ol-7.3-x86_64-nocm
   # The installer needs to be unpacked in the ./modules/software/files/
   # directory.
@@ -48,8 +46,7 @@ ml-masterless-example:
     - vagrant-vbguest
   additional_hosts: |
     192.168.1.1 example.com
-    192.168.253.10 wlsmaster.example.com puppet master # wlamaster is what the module looks for
-  virtualboxorafix: true
+    192.168.253.10 wlsmaster.example.com puppet master
   needs_storage: true
   cluster:          3
   disks:

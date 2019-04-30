@@ -1,4 +1,3 @@
-
 [![Enterprise Modules](https://raw.githubusercontent.com/enterprisemodules/public_images/master/banner1.jpg)](https://www.enterprisemodules.com)
 # Core Vagrantfile
 
