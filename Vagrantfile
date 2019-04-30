@@ -284,7 +284,6 @@ end
 # Check if all required software files from servers.yaml are present in repo.
 def local_software_file_check(config, file_name)
   config.trigger.after :up do |trigger|
-    puts(file_name, 'Test')
     file_path = Dir.pwd + "/modules/software/files/#{file_name}"
     unless File.exist?(file_path) # returns true for driectories
       raise "Missing software file: #{file_name}\nPlease add file to the: ./modules/software/files/"
