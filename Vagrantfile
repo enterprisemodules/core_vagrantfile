@@ -48,6 +48,41 @@ def masterless_setup(config, server, srv, hostname)
   end
 end
 
+def raw_setup(config, server, srv, hostname)
+  config.trigger.after :up do |trigger|
+    #
+    # Fix hostnames because Vagrant mixes it up.
+    #
+    if srv.vm.communicator == 'ssh'
+      trigger.run_remote = {inline: <<~EOD}
+        cat > /etc/hosts<< "EOF"
+        127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4
+        #{server['public_ip']} #{hostname}.example.com #{hostname}
+        #{server['additional_hosts'] ? server['additional_hosts'] : ''}
+        EOF
+        bash /vagrant/vm-scripts/setup_puppet_raw.sh
+        /opt/puppetlabs/puppet/bin/puppet apply /etc/puppetlabs/code/environments/production/manifests/site.pp || true
+      EOD
+    else # Windows
+      trigger.run_remote = {inline: <<~EOD}
+        cd c:\\vagrant\\vm-scripts
+        .\\setup_puppet_raw.ps1
+        iex "& 'C:\\Program Files\\Puppet Labs\\Puppet\\bin\\puppet' resource service puppet ensure=stopped"
+        iex "& 'C:\\Program Files\\Puppet Labs\\Puppet\\bin\\puppet' resource service puppet ensure=stopped"
+        iex "& 'C:\\Program Files\\Puppet Labs\\Puppet\\bin\\puppet' apply c:\\vagrant\\manifests\\site.pp -t"
+      EOD
+    end
+  end
+
+  config.trigger.after :provision do |trigger|
+    if srv.vm.communicator == 'ssh'
+      trigger.run_remote = {
+        inline: "puppet apply /etc/puppetlabs/code/environments/production/manifests/site.pp || true"
+      }
+    end
+  end
+end
+
 def puppet_master_setup(config, srv, server, puppet_installer, pe_puppet_user_id, pe_puppet_group_id, hostname)
   srv.vm.synced_folder '.', '/vagrant', owner: pe_puppet_user_id, group: pe_puppet_group_id
   srv.vm.provision :shell, inline: "/vagrant/modules/software/files/#{puppet_installer} -c /vagrant/pe.conf -y"
@@ -298,6 +333,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       # Depending on the machine type, perform setup
       #
       case server['type']
+      when 'raw'
+        raw_setup(config, server, srv, hostname)
       when 'masterless'
         masterless_setup(config, server, srv, hostname)
       when 'pe-master'

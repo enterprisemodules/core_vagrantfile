@@ -30,7 +30,7 @@ pe-agent-example:
   needs_storage: true
 
 ml-masterless-example:
-  public_ip:        '192.168.253.112'
+  public_ip:        '192.168.253.113'
   cpucount:         1
   type:             masterless
   virtualboxorafix: true
@@ -62,3 +62,12 @@ ml-masterless-example:
     redo:
       size:         10240
       uuid:         '34'
+
+raw-example:
+  public_ip:        '192.168.253.118'
+  cpucount:         1
+  type:             raw
+  virtualboxorafix: true
+  box:              enterprisemodules/ol-7.3-x86_64-nocm
+  software_files:
+    - puppet-agent-file.rpm
