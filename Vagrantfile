@@ -48,6 +48,19 @@ def masterless_setup(config, server, srv, hostname)
   end
 end
 
+def masterless_windows_setup(config, server, srv, hostname)
+  srv.vm.box = 'peru/windows-server-2016-standard-x64-eval' unless server['box']
+  srv.vm.hostname = "#{hostname}"
+  srv.vm.provision :shell, inline: <<~EOD
+  cd c:\\vagrant\\vm-scripts
+  .\\install_puppet.ps1
+  cd c:\\vagrant\\vm-scripts
+  .\\setup_puppet.ps1
+  iex "& 'C:\\Program Files\\Puppet Labs\\Puppet\\bin\\puppet' resource service puppet ensure=stopped"
+  iex "& 'C:\\Program Files\\Puppet Labs\\Puppet\\bin\\puppet' apply c:\\vagrant\\manifests\\site.pp -t"
+  EOD
+end
+
 def raw_setup(config, server, srv, hostname)
   config.trigger.after :up do |trigger|
     #
@@ -337,6 +350,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         raw_setup(config, server, srv, hostname)
       when 'masterless'
         masterless_setup(config, server, srv, hostname)
+      when 'masterless_windows'
+        masterless_windows_setup(config, server, srv, hostname)
       when 'pe-master'
         puppet_master_setup(config, srv, server, puppet_installer, pe_puppet_user_id, pe_puppet_group_id, hostname)
       when 'pe-agent'
