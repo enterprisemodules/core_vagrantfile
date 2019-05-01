@@ -8,3 +8,11 @@ Puppetfile.
 
 To create setup based on this repository also vm-scripts folder needs to be
 included.
+
+## Web Fetch Vagrantfile
+
+This repository hold also INSECURE script which pulls this repostiory
+Vagrantfile from master branch and executes its code.
+
+If you want to use it please replace content of `Vagrantfile` with
+`web_fetch_vagrantfile.rb`
