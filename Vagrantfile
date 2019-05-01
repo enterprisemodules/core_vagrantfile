@@ -298,6 +298,9 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.ssh.insert_key = false
 
   servers.each do |name, server|
+    # Fetch puppet installer version if it is present
+    puppet_installer = server['puppet_installer']
+
     # Start VM configuration
     config.vm.define name do |srv|
       # Perform checks
@@ -311,13 +314,12 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         #
         server['software_files'].each { |name| local_software_file_check(config, name) } if server['software_files']
 
-        # Fetch puppet installer version
-        puppet_installer = server['puppet_installer']
-
-        #
-        # Perform puppet installer check before main setup
-        #
-        local_software_file_check(config, puppet_installer) # Check if installer folder is present
+        if puppet_installer
+          #
+          # Perform puppet installer check before main setup
+          #
+          local_software_file_check(config, puppet_installer) # Check if installer folder is present
+        end
       end
 
       srv.vm.communicator = server['protocol'] || 'ssh'
