@@ -2,12 +2,48 @@ require 'yaml'
 
 VAGRANTFILE_API_VERSION = '2'.freeze
 
+VALID_KEYS = [
+  'public_ip',
+  'private_ip',
+  'domain_name',
+  'additional_hosts',
+  'box',
+  'puppet_master',
+  'disks',
+  'cluster',
+  'puppet_installer',
+  'required_plugins',
+  'software_files',
+  'protocol',
+  'type',
+  'cpucount',
+  'ram',
+  'virtualboxorafix',
+  'needs_storage',
+]
+
 class FilesNotFoundError < Vagrant::Errors::VagrantError
   def error_message
     "Missing software files"
   end
 end
 
+class InvalidDefinition < Vagrant::Errors::VagrantError
+  def error_message
+    "Invalid definition in server.yaml"
+  end
+end
+
+def validate_definitions(content)
+  errors = []
+  content.each do | key, values|
+    errors << "Node #{key} needs and 'ml-' prefix for masterless or an 'pe-' prefix for Puppset agent" if key[0,3] != 'ml-' && key[0,3] != 'pe-'
+    unknown_keys = values.keys - VALID_KEYS
+    next if unknown_keys.empty?
+    errors << "Node #{key} contains unkown entries #{unknown_keys.join(', ')}"
+  end
+  errors
+end
 
 def servers
   content = YAML.load_file('servers.yaml')
@@ -20,9 +56,13 @@ def servers
       content[key] = defaults.merge(ml_defaults).merge(values)
     when 'pe-'
       content[key] = defaults.merge(pe_defaults).merge(values)
-    else
-      raise 'invalid node identifier. Node identifier must begin with "pe-" or "ml-".'
     end
+  end
+  errors = validate_definitions(content)
+  if errors.any?
+    puts "servers.yaml contains following errors:"
+    errors.each {|e| puts "- #{e}\n"}
+    raise InvalidDefinition
   end
   content
 end
@@ -73,7 +113,6 @@ def masterless_setup(config, server, srv, hostname)
 end
 
 def masterless_windows_setup(config, server, srv, hostname)
-  srv.vm.box = 'peru/windows-server-2016-standard-x64-eval' unless server['box']
   srv.vm.hostname = "#{hostname}"
   srv.vm.provision :shell, inline: <<~EOD
   cd c:\\vagrant\\vm-scripts
@@ -330,7 +369,6 @@ end
 #
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.ssh.insert_key = false
-
   servers.each do |name, server|
     # Fetch puppet installer version if it is present
     puppet_installer = server['puppet_installer']
@@ -385,6 +423,15 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         puppet_master_setup(config, srv, server, puppet_installer, pe_puppet_user_id, pe_puppet_group_id, hostname)
       when 'pe-agent'
         puppet_agent_setup(config, server, srv, hostname)
+      begin
+        "#{server['type']} is invalid."
+      rescue => exception
+        
+      else
+        
+      ensure
+        
+      end
       end
 
       config.vm.provider :virtualbox do |vb|
