@@ -46,7 +46,7 @@ def validate_definitions(content)
 end
 
 def servers
-  content = YAML.load_file('servers.yaml')
+  content = YAML.load_file("#{File.dirname(__FILE__)}/servers.yaml")
   defaults    = content.delete('defaults') || {}
   pe_defaults = content.delete('pe-defaults') || {}
   ml_defaults = content.delete('ml-defaults') || {}
