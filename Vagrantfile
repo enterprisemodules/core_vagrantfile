@@ -390,7 +390,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
       srv.vm.communicator = server['protocol'] || 'ssh'
       srv.vm.box          = server['box']
-      hostname            = name.split('-').last # First part contains type of node
+      hostname            = name.gsub(/ml-|pe-/, '')
 
       if srv.vm.communicator == 'ssh'
         srv.vm.hostname = "#{hostname}.#{server['domain_name']}"
